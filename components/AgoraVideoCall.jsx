@@ -121,10 +121,15 @@ export default function AgoraVideoCall({ channelName, userName, userRole, onClos
           setRemoteUser(prev => prev?.uid === user.uid ? null : prev)
         })
 
-        // Create local tracks
+        // Create local tracks with mobile-optimized settings
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+        const videoConfig = isMobile 
+          ? { encoderConfig: '360p_1', facingMode: 'user' } // Lower resolution for mobile
+          : { encoderConfig: '480p_1', facingMode: 'user' }
+        
         const [audioTrack, videoTrack] = await AgoraRTC.createMicrophoneAndCameraTracks(
           { encoderConfig: 'speech_standard' },
-          { encoderConfig: '480p_1', facingMode: 'user' }
+          videoConfig
         )
 
         localAudioTrackRef.current = audioTrack
@@ -202,46 +207,46 @@ export default function AgoraVideoCall({ channelName, userName, userRole, onClos
   const otherParticipantName = userRole === 'doctor' ? 'Patient' : 'Doctor'
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900 flex flex-col">
+    <div className="fixed inset-0 z-50 bg-slate-900 flex flex-col safe-area-inset">
       {/* Header */}
-      <div className="bg-slate-800 px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-          <span className="text-white font-medium">CoolMind Session</span>
+      <div className="bg-slate-800 px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse flex-shrink-0"></div>
+          <span className="text-white font-medium text-sm sm:text-base truncate">CoolMind Session</span>
         </div>
-        <span className="text-slate-400 text-sm">
-          {remoteUser ? '2 participants' : 'Waiting for ' + otherParticipantName.toLowerCase() + '...'}
+        <span className="text-slate-400 text-xs sm:text-sm ml-2 flex-shrink-0">
+          {remoteUser ? '2 participants' : 'Waiting...'}
         </span>
       </div>
 
       {/* Loading State */}
       {loading && (
-        <div className="flex-1 flex items-center justify-center">
+        <div className="flex-1 flex items-center justify-center p-4">
           <div className="text-center">
-            <Loader2 className="w-12 h-12 text-violet-500 animate-spin mx-auto mb-4" />
-            <p className="text-white text-lg font-medium">Connecting...</p>
-            <p className="text-slate-400 text-sm mt-2">Setting up your video session</p>
+            <Loader2 className="w-10 h-10 sm:w-12 sm:h-12 text-violet-500 animate-spin mx-auto mb-3 sm:mb-4" />
+            <p className="text-white text-base sm:text-lg font-medium">Connecting...</p>
+            <p className="text-slate-400 text-xs sm:text-sm mt-2">Setting up your video session</p>
           </div>
         </div>
       )}
 
       {/* Error State */}
       {error && (
-        <div className="flex-1 flex items-center justify-center">
+        <div className="flex-1 flex items-center justify-center p-4">
           <div className="text-center max-w-md mx-4">
-            <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-            <p className="text-white text-lg font-medium mb-2">Connection Error</p>
-            <p className="text-slate-400 text-sm mb-6">{error}</p>
-            <div className="flex gap-3 justify-center">
+            <AlertCircle className="w-10 h-10 sm:w-12 sm:h-12 text-red-500 mx-auto mb-3 sm:mb-4" />
+            <p className="text-white text-base sm:text-lg font-medium mb-2">Connection Error</p>
+            <p className="text-slate-400 text-xs sm:text-sm mb-4 sm:mb-6">{error}</p>
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 justify-center">
               <button
                 onClick={() => window.location.reload()}
-                className="px-6 py-2 bg-violet-600 text-white rounded-lg font-medium hover:bg-violet-700"
+                className="px-4 sm:px-6 py-2.5 sm:py-2 bg-violet-600 text-white rounded-lg font-medium hover:bg-violet-700 active:scale-95 transition-all touch-manipulation text-sm sm:text-base"
               >
                 Try Again
               </button>
               <button
                 onClick={onClose}
-                className="px-6 py-2 bg-slate-700 text-white rounded-lg font-medium hover:bg-slate-600"
+                className="px-4 sm:px-6 py-2.5 sm:py-2 bg-slate-700 text-white rounded-lg font-medium hover:bg-slate-600 active:scale-95 transition-all touch-manipulation text-sm sm:text-base"
               >
                 Go Back
               </button>
@@ -252,45 +257,45 @@ export default function AgoraVideoCall({ channelName, userName, userRole, onClos
 
       {/* Video Area */}
       {joined && !error && (
-        <div className="flex-1 p-4 flex gap-4">
+        <div className="flex-1 p-2 sm:p-4 flex flex-col sm:flex-row gap-2 sm:gap-4 min-h-0">
           {/* Remote Video (Other Participant) */}
-          <div className="flex-1 relative bg-slate-800 rounded-2xl overflow-hidden">
+          <div className="flex-1 relative bg-slate-800 rounded-xl sm:rounded-2xl overflow-hidden min-h-0">
             {remoteUser ? (
               <>
                 <div
                   ref={remoteVideoRef}
-                  className="w-full h-full"
+                  className="w-full h-full object-cover"
                 />
-                <div className="absolute bottom-4 left-4 px-3 py-1.5 bg-black/60 rounded-full backdrop-blur-sm">
-                  <span className="text-white text-sm font-medium">{otherParticipantName}</span>
+                <div className="absolute bottom-2 sm:bottom-4 left-2 sm:left-4 px-2 sm:px-3 py-1 sm:py-1.5 bg-black/60 rounded-full backdrop-blur-sm">
+                  <span className="text-white text-xs sm:text-sm font-medium">{otherParticipantName}</span>
                 </div>
               </>
             ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center">
-                <div className="w-24 h-24 bg-slate-700 rounded-full flex items-center justify-center mb-4">
-                  <User className="w-12 h-12 text-slate-500" />
+              <div className="w-full h-full flex flex-col items-center justify-center p-4">
+                <div className="w-16 h-16 sm:w-24 sm:h-24 bg-slate-700 rounded-full flex items-center justify-center mb-3 sm:mb-4">
+                  <User className="w-8 h-8 sm:w-12 sm:h-12 text-slate-500" />
                 </div>
-                <div className="w-8 h-8 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin mb-4"></div>
-                <p className="text-white text-lg font-medium">Waiting for {otherParticipantName}...</p>
-                <p className="text-slate-400 text-sm mt-2">They will appear here when they join</p>
+                <div className="w-6 h-6 sm:w-8 sm:h-8 border-4 border-violet-500/30 border-t-violet-500 rounded-full animate-spin mb-3 sm:mb-4"></div>
+                <p className="text-white text-sm sm:text-lg font-medium text-center">Waiting for {otherParticipantName}...</p>
+                <p className="text-slate-400 text-xs sm:text-sm mt-2 text-center">They will appear here when they join</p>
               </div>
             )}
           </div>
 
           {/* Local Video (Self) - Picture in Picture */}
-          <div className="w-64 h-48 relative bg-slate-800 rounded-xl overflow-hidden flex-shrink-0 self-end">
+          <div className="w-full sm:w-64 h-48 sm:h-48 relative bg-slate-800 rounded-xl overflow-hidden flex-shrink-0 sm:self-end order-first sm:order-last">
             <div
               ref={localVideoRef}
-              className="w-full h-full"
+              className="w-full h-full object-cover"
             />
             {!videoEnabled && (
               <div className="absolute inset-0 flex items-center justify-center bg-slate-800">
-                <VideoOff className="w-10 h-10 text-slate-500" />
+                <VideoOff className="w-8 h-8 sm:w-10 sm:h-10 text-slate-500" />
               </div>
             )}
             <div className="absolute bottom-2 left-2 px-2 py-1 bg-black/60 rounded-full backdrop-blur-sm">
-              <span className="text-white text-xs font-medium">
-                {userName || 'You'} ({userRole === 'doctor' ? 'Doctor' : 'Patient'})
+              <span className="text-white text-xs font-medium truncate max-w-[120px] sm:max-w-none">
+                {userName || 'You'} ({userRole === 'doctor' ? 'Dr' : 'You'})
               </span>
             </div>
           </div>
@@ -299,38 +304,41 @@ export default function AgoraVideoCall({ channelName, userName, userRole, onClos
 
       {/* Controls Bar */}
       {joined && !error && (
-        <div className="bg-slate-800 p-4">
-          <div className="flex items-center justify-center gap-4">
+        <div className="bg-slate-800 p-3 sm:p-4 safe-area-bottom">
+          <div className="flex items-center justify-center gap-3 sm:gap-4">
             <button
               onClick={toggleAudio}
-              className={`p-4 rounded-full transition-all ${
+              className={`p-3 sm:p-4 rounded-full transition-all touch-manipulation active:scale-95 ${
                 audioEnabled
                   ? 'bg-slate-700 hover:bg-slate-600 text-white'
                   : 'bg-red-500 hover:bg-red-600 text-white'
               }`}
               title={audioEnabled ? 'Mute' : 'Unmute'}
+              aria-label={audioEnabled ? 'Mute microphone' : 'Unmute microphone'}
             >
-              {audioEnabled ? <Mic className="w-6 h-6" /> : <MicOff className="w-6 h-6" />}
+              {audioEnabled ? <Mic className="w-5 h-5 sm:w-6 sm:h-6" /> : <MicOff className="w-5 h-5 sm:w-6 sm:h-6" />}
             </button>
 
             <button
               onClick={toggleVideo}
-              className={`p-4 rounded-full transition-all ${
+              className={`p-3 sm:p-4 rounded-full transition-all touch-manipulation active:scale-95 ${
                 videoEnabled
                   ? 'bg-slate-700 hover:bg-slate-600 text-white'
                   : 'bg-red-500 hover:bg-red-600 text-white'
               }`}
               title={videoEnabled ? 'Turn off camera' : 'Turn on camera'}
+              aria-label={videoEnabled ? 'Turn off camera' : 'Turn on camera'}
             >
-              {videoEnabled ? <Video className="w-6 h-6" /> : <VideoOff className="w-6 h-6" />}
+              {videoEnabled ? <Video className="w-5 h-5 sm:w-6 sm:h-6" /> : <VideoOff className="w-5 h-5 sm:w-6 sm:h-6" />}
             </button>
 
             <button
               onClick={handleLeave}
-              className="p-4 bg-red-600 hover:bg-red-700 rounded-full text-white transition-all"
+              className="p-3 sm:p-4 bg-red-600 hover:bg-red-700 rounded-full text-white transition-all touch-manipulation active:scale-95"
               title="End call"
+              aria-label="End call"
             >
-              <PhoneOff className="w-6 h-6" />
+              <PhoneOff className="w-5 h-5 sm:w-6 sm:h-6" />
             </button>
           </div>
         </div>
