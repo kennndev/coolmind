@@ -1,7 +1,6 @@
 'use client'
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
-import AgoraRTC from 'agora-rtc-sdk-ng'
 import {
   Mic,
   MicOff,
@@ -16,8 +15,8 @@ import {
 // Agora App ID (Testing Mode - no token required)
 const APP_ID = '8c0e9904d9d541a39edac24513b9a760'
 
-// Configure Agora client - reduce logs
-AgoraRTC.setLogLevel(4)
+// AgoraRTC will be dynamically imported on client-side only
+let AgoraRTC = null
 
 export default function AgoraVideoCall({ channelName, userName, userRole, onClose }) {
   const [joined, setJoined] = useState(false)
@@ -75,6 +74,13 @@ export default function AgoraVideoCall({ channelName, userName, userRole, onClos
     const init = async () => {
       try {
         console.log('Initializing Agora for channel:', channelName)
+
+        // Dynamically import Agora SDK (client-side only)
+        if (!AgoraRTC) {
+          const AgoraModule = await import('agora-rtc-sdk-ng')
+          AgoraRTC = AgoraModule.default
+          AgoraRTC.setLogLevel(4) // Reduce logs
+        }
 
         // Create Agora client
         const client = AgoraRTC.createClient({
