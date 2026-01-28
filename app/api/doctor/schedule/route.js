@@ -69,7 +69,10 @@ export async function GET(request) {
         path: 'patientId',
         select: 'firstName lastName patientId primaryConditions'
       })
-      .populate('checkInId')
+      .populate({
+        path: 'checkInId',
+        select: 'mood primaryConcern severity note sleepQuality energyLevel stressLevel'
+      })
       .sort({ scheduledDate: upcoming ? 1 : -1 })
       .lean();
 
