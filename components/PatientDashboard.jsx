@@ -64,6 +64,10 @@ export default function PatientDashboard({ user: authUser, onLogout }) {
   const [journalModal, setJournalModal] = useState(false)
   const [scheduleModal, setScheduleModal] = useState(false)
   const [selectedDoctor, setSelectedDoctor] = useState(null)
+  const [doctorSelectModal, setDoctorSelectModal] = useState(false)
+
+  // Check if patient has no assigned doctor
+  const hasNoDoctor = patientProfile && !patientProfile.assignedDoctor
 
   const user = useMemo(() => {
     if (patientProfile) {
@@ -503,6 +507,48 @@ export default function PatientDashboard({ user: authUser, onLogout }) {
           userRole="patient"
           onClose={() => setVideoRoom(null)}
         />
+      )}
+
+      {/* Doctor Selection Modal */}
+      {doctorSelectModal && (
+        <DoctorSelectionModal
+          doctors={doctors}
+          onClose={() => setDoctorSelectModal(false)}
+          onSelect={async (doctor) => {
+            try {
+              const { patientAPI } = await import('@/lib/api.js')
+              const result = await patientAPI.selectDoctor(doctor._id)
+              if (result.success) {
+                setDoctorSelectModal(false)
+                loadPatientData() // Refresh data
+              }
+            } catch (error) {
+              console.error('Failed to select doctor:', error)
+            }
+          }}
+        />
+      )}
+
+      {/* Prompt to select doctor if none assigned */}
+      {hasNoDoctor && !doctorSelectModal && doctors.length > 0 && (
+        <div className="fixed bottom-20 left-4 right-4 sm:left-auto sm:right-6 sm:w-96 bg-violet-600 text-white p-4 rounded-xl shadow-xl z-40">
+          <div className="flex items-start gap-3">
+            <Users className="w-6 h-6 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-semibold">Choose Your Doctor</p>
+              <p className="text-sm text-violet-100 mt-1">Select a healthcare provider to schedule appointments and start your wellness journey.</p>
+              <button
+                onClick={() => setDoctorSelectModal(true)}
+                className="mt-3 px-4 py-2 bg-white text-violet-600 rounded-lg font-semibold text-sm hover:bg-violet-50"
+              >
+                Browse Doctors
+              </button>
+            </div>
+            <button onClick={() => setDoctorSelectModal(true)} className="text-white/60 hover:text-white">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )
@@ -1955,6 +2001,97 @@ function ScheduleAppointmentModal({ doctor, onClose, onScheduled }) {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  )
+}
+
+// ==================== DOCTOR SELECTION MODAL ====================
+
+function DoctorSelectionModal({ doctors, onClose, onSelect }) {
+  const [selecting, setSelecting] = useState(null)
+
+  const handleSelect = async (doctor) => {
+    setSelecting(doctor._id)
+    await onSelect(doctor)
+    setSelecting(null)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+
+      <div className="relative w-full max-w-2xl max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-violet-600 to-purple-600 px-6 py-4 text-white flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Users className="w-6 h-6" />
+            <div>
+              <h2 className="text-lg font-semibold">Choose Your Doctor</h2>
+              <p className="text-sm text-violet-100">Select a healthcare provider to get started</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {doctors.length > 0 ? (
+            <div className="space-y-4">
+              {doctors.map((doctor) => (
+                <div
+                  key={doctor._id}
+                  className="p-4 border border-slate-200 rounded-xl hover:border-violet-300 hover:bg-violet-50/50 transition-all"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="w-14 h-14 rounded-full bg-gradient-to-br from-violet-100 to-purple-100 flex items-center justify-center text-violet-700 font-bold text-lg flex-shrink-0">
+                      {doctor.firstName?.[0]}{doctor.lastName?.[0]}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-slate-900">
+                        {doctor.title || 'Dr.'} {doctor.firstName} {doctor.lastName}
+                      </h3>
+                      <p className="text-sm text-violet-600 font-medium">{doctor.specialty || 'General Practice'}</p>
+                      {doctor.bio && (
+                        <p className="text-sm text-slate-600 mt-2 line-clamp-2">{doctor.bio}</p>
+                      )}
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        {doctor.yearsOfExperience && (
+                          <span className="px-2 py-1 bg-slate-100 text-slate-600 text-xs rounded-full">
+                            {doctor.yearsOfExperience}+ years exp
+                          </span>
+                        )}
+                        {doctor.stats?.currentPatients !== undefined && (
+                          <span className="px-2 py-1 bg-slate-100 text-slate-600 text-xs rounded-full">
+                            {doctor.stats.currentPatients} patients
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleSelect(doctor)}
+                      disabled={selecting === doctor._id}
+                      className="px-4 py-2 bg-violet-600 text-white rounded-lg font-semibold text-sm hover:bg-violet-700 disabled:opacity-50 flex-shrink-0"
+                    >
+                      {selecting === doctor._id ? 'Selecting...' : 'Select'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <Users className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+              <p className="text-slate-600 text-lg font-medium">No doctors available</p>
+              <p className="text-slate-500 text-sm mt-2">Please check back later</p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
