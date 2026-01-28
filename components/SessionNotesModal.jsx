@@ -42,7 +42,7 @@ export default function SessionNotesModal({ session, onClose, onSaved }) {
   const loadNotes = async () => {
     try {
       setLoading(true)
-      const token = localStorage.getItem('token')
+      const token = localStorage.getItem('authToken')
       const response = await fetch(`/api/doctor/sessions/${session._id}/notes`, {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -67,7 +67,7 @@ export default function SessionNotesModal({ session, onClose, onSaved }) {
       setSaving(true)
       setError(null)
 
-      const token = localStorage.getItem('token')
+      const token = localStorage.getItem('authToken')
       const response = await fetch(`/api/doctor/sessions/${session._id}/notes`, {
         method: 'PUT',
         headers: {
