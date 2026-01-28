@@ -119,7 +119,19 @@ export default function WellnessApp({ user: authUser, onLogout }) {
       // Load patients
       const patientsData = await doctorAPI.getPatients();
       if (patientsData.success) {
-        setPatients(patientsData.patients || []);
+        // Transform patients to match component expectations
+        const transformedPatients = (patientsData.patients || []).map((p) => ({
+          ...p,
+          id: p._id || p.id,
+          name: p.name || (p.firstName && p.lastName ? `${p.firstName} ${p.lastName}` : p.firstName || p.lastName || 'Unknown Patient'),
+          patientId: p.patientId || p.id || 'N/A',
+          condition: p.condition || (p.primaryConditions && p.primaryConditions[0]) || 'General',
+          progress: p.progress || 'stable',
+          checkInStatus: p.checkInStatus || 'pending',
+          sessions: p.sessions || 0,
+          nextSession: p.nextSession || 'Not scheduled',
+        }));
+        setPatients(transformedPatients);
       }
 
       // Load upcoming schedule (all future sessions, not just today)
@@ -617,6 +629,29 @@ function DoctorDashboard({ patients, todaysSchedule, upcomingSessions, onOpenPat
           {todaysSchedule.length > 0 ? (
             <div className="space-y-4">
               {todaysSchedule.map((item) => {
+                // Helper to check if session can be joined
+                const getJoinStatus = (session) => {
+                  if (!session?.scheduledDate) return { canJoin: true, status: 'available', text: 'Join' };
+
+                  const now = new Date();
+                  const sessionStart = new Date(session.scheduledDate);
+                  const sessionDuration = session.duration || 50;
+                  const sessionEnd = new Date(sessionStart.getTime() + sessionDuration * 60 * 1000);
+                  const joinWindowStart = new Date(sessionStart.getTime() - 15 * 60 * 1000);
+                  const joinWindowEnd = new Date(sessionEnd.getTime() + 15 * 60 * 1000);
+
+                  const canJoin = now >= joinWindowStart && now <= joinWindowEnd;
+                  const hasEnded = now > joinWindowEnd;
+                  const timeDiff = sessionStart.getTime() - now.getTime();
+                  const minutesUntil = Math.floor(timeDiff / (1000 * 60));
+                  const hoursUntil = Math.floor(minutesUntil / 60);
+
+                  if (hasEnded) return { canJoin: false, status: 'ended', text: 'Ended' };
+                  if (canJoin) return { canJoin: true, status: 'available', text: 'Join' };
+                  if (minutesUntil < 60) return { canJoin: false, status: 'soon', text: `In ${minutesUntil}m` };
+                  return { canJoin: false, status: 'waiting', text: `In ${hoursUntil}h ${minutesUntil % 60}m` };
+                };
+
                 // Format session data (handles both API sessions and demo patient data)
                 let sessionData;
                 if (item.scheduledDate && item.patientId) {
@@ -626,12 +661,13 @@ function DoctorDashboard({ patients, todaysSchedule, upcomingSessions, onOpenPat
                   sessionData = {
                     id: item._id || item.sessionId,
                     name: patient.firstName && patient.lastName ? `${patient.firstName} ${patient.lastName}` : 'Patient',
-                    initials: patient.firstName && patient.lastName 
+                    initials: patient.firstName && patient.lastName
                       ? `${patient.firstName[0]}${patient.lastName[0]}`.toUpperCase()
                       : 'P',
                     time: date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
                     condition: patient.primaryConditions?.[0] || 'General',
-                    session: item
+                    session: item,
+                    joinStatus: getJoinStatus(item)
                   };
                 } else {
                   // Demo data format
@@ -641,7 +677,8 @@ function DoctorDashboard({ patients, todaysSchedule, upcomingSessions, onOpenPat
                     initials: item.name.split(' ').map((n) => n[0]).join(''),
                     time: item.nextSession?.split(', ')[1] || '',
                     condition: item.condition || 'General',
-                    session: item
+                    session: item,
+                    joinStatus: { canJoin: true, status: 'available', text: 'Join' }
                   };
                 }
                 
@@ -691,13 +728,24 @@ function DoctorDashboard({ patients, todaysSchedule, upcomingSessions, onOpenPat
                           Notes
                         </button>
 
-                        <button
-                          onClick={() => onJoinVideo(sessionData.session)}
-                          className="ml-auto inline-flex items-center gap-2 text-xs font-semibold text-white btn-primary px-3 py-2 rounded-lg"
-                        >
-                          <Video className="w-4 h-4" />
-                          Join
-                        </button>
+                        {sessionData.joinStatus?.canJoin ? (
+                          <button
+                            onClick={() => onJoinVideo(sessionData.session)}
+                            className="ml-auto inline-flex items-center gap-2 text-xs font-semibold text-white btn-primary px-3 py-2 rounded-lg"
+                          >
+                            <Video className="w-4 h-4" />
+                            Join
+                          </button>
+                        ) : sessionData.joinStatus?.status === 'ended' ? (
+                          <span className="ml-auto text-xs text-slate-500 bg-slate-100 px-3 py-2 rounded-lg">
+                            Session Ended
+                          </span>
+                        ) : (
+                          <span className="ml-auto inline-flex items-center gap-1 text-xs text-amber-700 bg-amber-50 px-3 py-2 rounded-lg">
+                            <Clock className="w-3 h-3" />
+                            {sessionData.joinStatus?.text || 'Not started'}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -777,9 +825,14 @@ function PatientsView({ patients, onOpenPatient }) {
 
   const filteredPatients = useMemo(() => {
     return patients.filter((p) => {
+      // Safely handle undefined/null values
+      const name = (p.name || '').toLowerCase();
+      const patientId = (p.patientId || '').toLowerCase();
+      const searchLower = searchTerm.toLowerCase();
+      
       const matchesSearch =
-        p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.patientId.toLowerCase().includes(searchTerm.toLowerCase());
+        name.includes(searchLower) ||
+        patientId.includes(searchLower);
       const matchesFilter =
         filterStatus === 'all' ||
         (filterStatus === 'attention' && p.progress === 'needs-attention') ||
@@ -833,7 +886,7 @@ function PatientsView({ patients, onOpenPatient }) {
           >
             <div className="flex items-start gap-4 mb-4">
               <div className="w-14 h-14 rounded-full bg-gradient-to-br from-violet-100 to-purple-100 flex items-center justify-center text-violet-700 font-semibold flex-shrink-0">
-                {patient.name
+                {(patient.name || 'Unknown')
                   .split(' ')
                   .map((n) => n[0])
                   .join('')}
@@ -841,8 +894,8 @@ function PatientsView({ patients, onOpenPatient }) {
               <div className="flex-1">
                 <div className="flex items-start justify-between gap-2 mb-1">
                   <div>
-                    <h3 className="font-semibold text-slate-900">{patient.name}</h3>
-                    <p className="text-sm text-slate-600">{patient.patientId}</p>
+                    <h3 className="font-semibold text-slate-900">{patient.name || 'Unknown Patient'}</h3>
+                    <p className="text-sm text-slate-600">{patient.patientId || 'N/A'}</p>
                   </div>
                   <span
                     className={clsx(
@@ -904,7 +957,7 @@ function PatientDetailView({ patient, onBack, onJoinVideo, onOpenNotesModal }) {
       <div className="bg-white rounded-xl p-6 lg:p-8 border border-slate-200">
         <div className="flex flex-col sm:flex-row items-start gap-6">
           <div className="w-20 h-20 rounded-full bg-gradient-to-br from-violet-100 to-purple-100 flex items-center justify-center text-violet-700 font-bold text-2xl flex-shrink-0">
-            {patient.name
+            {(patient.name || 'Unknown')
               .split(' ')
               .map((n) => n[0])
               .join('')}
@@ -912,8 +965,8 @@ function PatientDetailView({ patient, onBack, onJoinVideo, onOpenNotesModal }) {
           <div className="flex-1">
             <div className="flex items-start justify-between gap-4 mb-2">
               <div>
-                <h2 className="font-display text-2xl font-bold text-slate-900">{patient.name}</h2>
-                <p className="text-slate-600">{patient.patientId}</p>
+                <h2 className="font-display text-2xl font-bold text-slate-900">{patient.name || 'Unknown Patient'}</h2>
+                <p className="text-slate-600">{patient.patientId || 'N/A'}</p>
               </div>
               <span
                 className={clsx(
