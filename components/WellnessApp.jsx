@@ -118,24 +118,82 @@ export default function WellnessApp({ user: authUser, onLogout }) {
 
       // Load patients
       const patientsData = await doctorAPI.getPatients();
-      if (patientsData.success) {
-        // Transform patients to match component expectations
-        const transformedPatients = (patientsData.patients || []).map((p) => ({
-          ...p,
-          id: p._id || p.id,
-          name: p.name || (p.firstName && p.lastName ? `${p.firstName} ${p.lastName}` : p.firstName || p.lastName || 'Unknown Patient'),
-          patientId: p.patientId || p.id || 'N/A',
-          condition: p.condition || (p.primaryConditions && p.primaryConditions[0]) || 'General',
-          progress: p.progress || 'stable',
-          checkInStatus: p.checkInStatus || 'pending',
-          sessions: p.sessions || 0,
-          nextSession: p.nextSession || 'Not scheduled',
-        }));
-        setPatients(transformedPatients);
-      }
-
+      
       // Load all sessions (including completed) for schedule and patient detail views
       const scheduleData = await doctorAPI.getSchedule(null, false);
+      
+      // Transform patients and determine check-in status from sessions
+      if (patientsData.success) {
+        const allSessions = scheduleData.success ? (scheduleData.sessions || []) : [];
+        
+        // Transform patients to match component expectations
+        const transformedPatients = (patientsData.patients || []).map((p) => {
+          const patientId = p._id || p.id;
+          
+          // Find the most recent/upcoming session for this patient
+          const patientSessions = allSessions.filter((s) => {
+            if (!s.patientId) return false;
+            let sessionPatientId = null;
+            if (typeof s.patientId === 'object' && s.patientId !== null) {
+              sessionPatientId = s.patientId._id || s.patientId;
+            } else {
+              sessionPatientId = s.patientId;
+            }
+            return String(sessionPatientId) === String(patientId);
+          });
+          
+          // Find the next upcoming session (not completed)
+          const now = new Date();
+          const upcomingSession = patientSessions
+            .filter((s) => {
+              const status = s.status || 'scheduled';
+              if (['completed', 'cancelled', 'no-show'].includes(status)) return false;
+              const sessionDate = new Date(s.scheduledDate);
+              const sessionEnd = new Date(sessionDate.getTime() + (s.duration || 50) * 60000);
+              return sessionEnd >= now;
+            })
+            .sort((a, b) => {
+              const dateA = new Date(a.scheduledDate || 0);
+              const dateB = new Date(b.scheduledDate || 0);
+              return dateA - dateB;
+            })[0];
+          
+          // Determine check-in status from the upcoming session
+          let checkInStatus = 'pending';
+          if (upcomingSession) {
+            // Check if check-in is completed for the upcoming session
+            if (upcomingSession.checkInCompleted || upcomingSession.checkInId) {
+              checkInStatus = 'completed';
+            }
+          } else {
+            // No upcoming session, check the most recent session
+            const recentSession = patientSessions
+              .sort((a, b) => {
+                const dateA = new Date(a.scheduledDate || 0);
+                const dateB = new Date(b.scheduledDate || 0);
+                return dateB - dateA;
+              })[0];
+            
+            if (recentSession && (recentSession.checkInCompleted || recentSession.checkInId)) {
+              checkInStatus = 'completed';
+            }
+          }
+          
+          return {
+            ...p,
+            id: p._id || p.id,
+            name: p.name || (p.firstName && p.lastName ? `${p.firstName} ${p.lastName}` : p.firstName || p.lastName || 'Unknown Patient'),
+            patientId: p.patientId || p.id || 'N/A',
+            condition: p.condition || (p.primaryConditions && p.primaryConditions[0]) || 'General',
+            progress: p.progress || 'stable',
+            checkInStatus: checkInStatus,
+            sessions: p.sessions || 0,
+            nextSession: p.nextSession || 'Not scheduled',
+          };
+        });
+        setPatients(transformedPatients);
+      }
+      
       if (scheduleData.success) {
         setSessions(scheduleData.sessions || []);
       }
@@ -1079,6 +1137,50 @@ function PatientDetailView({ patient, sessions, onBack, onJoinVideo, onOpenNotes
   // Don't show if session is completed or if there's no upcoming session
   const shouldShowJoinButton = nextUpcomingSession && nextUpcomingSession.status !== 'completed';
 
+  // Find the most recent session with check-in data for this patient
+  const sessionWithCheckIn = useMemo(() => {
+    if (!sessions || !patient) return null;
+    
+    const patientId = patient._id || patient.id;
+    if (!patientId) return null;
+    
+    return sessions
+      .filter((s) => {
+        if (!s.patientId) return false;
+        let sessionPatientId = null;
+        if (typeof s.patientId === 'object' && s.patientId !== null) {
+          sessionPatientId = s.patientId._id || s.patientId;
+        } else {
+          sessionPatientId = s.patientId;
+        }
+        return String(sessionPatientId) === String(patientId);
+      })
+      .filter((s) => {
+        // Find sessions with check-in completed
+        return s.checkInCompleted || s.checkInId;
+      })
+      .sort((a, b) => {
+        // Sort by date, most recent first
+        const dateA = new Date(a.scheduledDate || 0);
+        const dateB = new Date(b.scheduledDate || 0);
+        return dateB - dateA;
+      })[0] || null;
+  }, [sessions, patient]);
+
+  // Determine check-in status and data
+  // Use check-in from the most recent session, or fall back to patient's checkInData
+  const hasCheckIn = sessionWithCheckIn && (sessionWithCheckIn.checkInCompleted || sessionWithCheckIn.checkInId);
+  const checkInData = sessionWithCheckIn?.checkInId || patient.checkInData;
+  
+  // Transform check-in data if needed (checkInId might be populated object)
+  const formattedCheckInData = checkInData ? {
+    mood: checkInData.mood,
+    concern: checkInData.primaryConcern || checkInData.concern,
+    severity: checkInData.severity,
+    note: checkInData.note,
+    ...checkInData
+  } : null;
+
   return (
     <div className="fade-in space-y-6">
       <button onClick={onBack} className="text-slate-600 hover:text-slate-900 font-medium flex items-center gap-2 text-sm">
@@ -1121,7 +1223,7 @@ function PatientDetailView({ patient, sessions, onBack, onJoinVideo, onOpenNotes
         </div>
       </div>
 
-      {patient.checkInData ? <CheckInCard checkIn={patient.checkInData} /> : <PendingCheckInCard />}
+      {hasCheckIn && formattedCheckInData ? <CheckInCard checkIn={formattedCheckInData} /> : <PendingCheckInCard />}
 
       <div className="bg-white rounded-xl p-6 border border-slate-200">
         <h3 className="font-display font-semibold text-lg text-slate-900 mb-4">Recent Session Notes</h3>
