@@ -1023,6 +1023,62 @@ function PatientDetailView({ patient, sessions, onBack, onJoinVideo, onOpenNotes
     return 'No notes available';
   };
 
+  // Find the next upcoming session for this patient (not completed)
+  const nextUpcomingSession = useMemo(() => {
+    if (!sessions || !patient) return null;
+    
+    const patientId = patient._id || patient.id;
+    if (!patientId) return null;
+    
+    const now = new Date();
+    return sessions
+      .filter((s) => {
+        if (!s.patientId) return false;
+        let sessionPatientId = null;
+        if (typeof s.patientId === 'object' && s.patientId !== null) {
+          sessionPatientId = s.patientId._id || s.patientId;
+        } else {
+          sessionPatientId = s.patientId;
+        }
+        return String(sessionPatientId) === String(patientId);
+      })
+      .filter((s) => {
+        // Only get sessions that are not completed, cancelled, or no-show
+        const status = s.status || 'scheduled';
+        if (['completed', 'cancelled', 'no-show'].includes(status)) {
+          return false;
+        }
+        
+        // If session has notes and scheduled date is in the past, consider it completed
+        const hasNotes = s.sessionNotes || s.presentingConcerns || s.keyObservations || s.treatmentPlan || s.homework;
+        const sessionDate = new Date(s.scheduledDate);
+        const sessionEnd = new Date(sessionDate.getTime() + (s.duration || 50) * 60000);
+        
+        // If session ended and has notes, it's effectively completed
+        if (hasNotes && sessionEnd < now) {
+          return false;
+        }
+        
+        return true;
+      })
+      .filter((s) => {
+        // Only get future sessions or sessions happening now
+        const sessionDate = new Date(s.scheduledDate);
+        const sessionEnd = new Date(sessionDate.getTime() + (s.duration || 50) * 60000);
+        return sessionEnd >= now;
+      })
+      .sort((a, b) => {
+        // Sort by date, earliest first
+        const dateA = new Date(a.scheduledDate || 0);
+        const dateB = new Date(b.scheduledDate || 0);
+        return dateA - dateB;
+      })[0] || null; // Get the first (earliest) upcoming session
+  }, [sessions, patient]);
+
+  // Determine if we should show the Start/Join Session button
+  // Don't show if session is completed or if there's no upcoming session
+  const shouldShowJoinButton = nextUpcomingSession && nextUpcomingSession.status !== 'completed';
+
   return (
     <div className="fade-in space-y-6">
       <button onClick={onBack} className="text-slate-600 hover:text-slate-900 font-medium flex items-center gap-2 text-sm">
@@ -1127,11 +1183,13 @@ function PatientDetailView({ patient, sessions, onBack, onJoinVideo, onOpenNotes
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3">
-        <button onClick={onJoinVideo} className="flex-1 btn-primary text-white py-3 rounded-lg font-semibold inline-flex items-center justify-center gap-2">
-          <Video className="w-5 h-5" />
-          Start / Join Session
-        </button>
-        <button onClick={onOpenNotesModal} className="flex-1 sm:flex-none px-6 py-3 border border-slate-200 rounded-lg font-semibold text-slate-700 hover:bg-slate-50 inline-flex items-center justify-center gap-2">
+        {shouldShowJoinButton && (
+          <button onClick={onJoinVideo} className="flex-1 btn-primary text-white py-3 rounded-lg font-semibold inline-flex items-center justify-center gap-2">
+            <Video className="w-5 h-5" />
+            Start / Join Session
+          </button>
+        )}
+        <button onClick={onOpenNotesModal} className={`${shouldShowJoinButton ? 'flex-1 sm:flex-none' : 'w-full'} px-6 py-3 border border-slate-200 rounded-lg font-semibold text-slate-700 hover:bg-slate-50 inline-flex items-center justify-center gap-2`}>
           <Upload className="w-5 h-5" />
           Notes from Image
         </button>
