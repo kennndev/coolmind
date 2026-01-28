@@ -53,19 +53,24 @@ export async function GET(request) {
       };
     }
 
-    // Fetch sessions for this doctor - include videoRoomId and videoRoomUrl
+    // Fetch sessions for this doctor - include videoRoomId, videoRoomUrl, and session notes
+    // If upcoming=true, get future sessions; otherwise get all sessions including completed
+    const statusFilter = upcoming 
+      ? { status: { $in: ['scheduled', 'confirmed', 'in-progress'] } }
+      : {}; // No status filter if not upcoming (get all including completed)
+    
     const sessions = await Session.find({
       doctorId: doctor._id,
       ...dateFilter,
-      status: { $in: ['scheduled', 'confirmed', 'in-progress'] }
+      ...statusFilter
     })
-      .select('sessionId scheduledDate duration type mode status videoRoomId videoRoomUrl checkInCompleted checkInId patientId doctorId')
+      .select('sessionId scheduledDate duration type mode status videoRoomId videoRoomUrl checkInCompleted checkInId patientId doctorId sessionNotes presentingConcerns keyObservations interventionsUsed treatmentPlan homework riskAssessment riskNotes notesUpdatedAt')
       .populate({
         path: 'patientId',
         select: 'firstName lastName patientId primaryConditions'
       })
       .populate('checkInId')
-      .sort({ scheduledDate: 1 })
+      .sort({ scheduledDate: upcoming ? 1 : -1 })
       .lean();
 
     return NextResponse.json({
