@@ -48,10 +48,22 @@ export async function POST(request) {
       );
     }
 
+    // Convert yearsOfExperience to number if it's a string
+    const yearsExp = yearsOfExperience ? parseInt(yearsOfExperience, 10) || 0 : 0;
+
     // Check if doctor record exists, create if not
     let doctor = await Doctor.findOne({ userId });
 
     if (!doctor) {
+      // Check if license number is already used by another doctor
+      const existingLicense = await Doctor.findOne({ licenseNumber, userId: { $ne: userId } });
+      if (existingLicense) {
+        return NextResponse.json(
+          { success: false, message: 'This license number is already registered' },
+          { status: 400 }
+        );
+      }
+
       // Generate unique doctor ID
       const doctorCount = await Doctor.countDocuments();
       const doctorId = `DOC${String(doctorCount + 1).padStart(6, '0')}`;
@@ -62,17 +74,17 @@ export async function POST(request) {
         doctorId,
         firstName,
         lastName,
-        title,
+        title: title || 'Dr.',
         specialty,
-        subSpecialties,
+        subSpecialties: subSpecialties || [],
         licenseNumber,
-        licenseState,
+        licenseState: licenseState || '',
         licenseExpiryDate: licenseExpiryDate ? new Date(licenseExpiryDate) : null,
-        phoneNumber,
-        bio,
-        yearsOfExperience,
-        education,
-        certifications,
+        phoneNumber: phoneNumber || '',
+        bio: bio || '',
+        yearsOfExperience: yearsExp,
+        education: education || [],
+        certifications: certifications || [],
         profileCompleted: true,
         isApproved: true // Auto-approve doctors
       });
@@ -83,17 +95,17 @@ export async function POST(request) {
         {
           firstName,
           lastName,
-          title,
+          title: title || 'Dr.',
           specialty,
-          subSpecialties,
+          subSpecialties: subSpecialties || [],
           licenseNumber,
-          licenseState,
+          licenseState: licenseState || '',
           licenseExpiryDate: licenseExpiryDate ? new Date(licenseExpiryDate) : null,
-          phoneNumber,
-          bio,
-          yearsOfExperience,
-          education,
-          certifications,
+          phoneNumber: phoneNumber || '',
+          bio: bio || '',
+          yearsOfExperience: yearsExp,
+          education: education || [],
+          certifications: certifications || [],
           profileCompleted: true,
           isApproved: true,
           updatedAt: new Date()
@@ -125,8 +137,30 @@ export async function POST(request) {
 
   } catch (error) {
     console.error('Complete doctor profile error:', error);
+
+    // Handle duplicate key error (license number)
+    if (error.code === 11000) {
+      return NextResponse.json(
+        { success: false, message: 'This license number is already registered' },
+        { status: 400 }
+      );
+    }
+
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(e => e.message);
+      return NextResponse.json(
+        { success: false, message: messages.join(', ') },
+        { status: 400 }
+      );
+    }
+
     return NextResponse.json(
-      { success: false, message: 'Failed to complete profile' },
+      {
+        success: false,
+        message: 'Failed to complete profile',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      },
       { status: 500 }
     );
   }
