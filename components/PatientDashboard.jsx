@@ -172,12 +172,32 @@ export default function PatientDashboard({ user: authUser, onLogout }) {
     []
   )
 
-  const upcomingSessions = useMemo(
-    () => sessions.filter((s) => s.status === 'scheduled' || s.status === 'confirmed'),
-    [sessions]
-  )
+  const upcomingSessions = useMemo(() => {
+    const now = new Date()
+    return sessions.filter((s) => {
+      if (s.status !== 'scheduled' && s.status !== 'confirmed') return false
+      // Include sessions that haven't ended yet (session end + 15 min buffer)
+      const sessionStart = new Date(s.scheduledDate)
+      const sessionDuration = s.duration || 50
+      const sessionEnd = new Date(sessionStart.getTime() + (sessionDuration + 15) * 60 * 1000)
+      return now <= sessionEnd
+    })
+  }, [sessions])
 
-  const pastSessions = useMemo(() => sessions.filter((s) => s.status === 'completed'), [sessions])
+  const pastSessions = useMemo(() => {
+    const now = new Date()
+    return sessions.filter((s) => {
+      // Include completed sessions OR sessions that have ended
+      if (s.status === 'completed') return true
+      if (s.status === 'scheduled' || s.status === 'confirmed') {
+        const sessionStart = new Date(s.scheduledDate)
+        const sessionDuration = s.duration || 50
+        const sessionEnd = new Date(sessionStart.getTime() + (sessionDuration + 15) * 60 * 1000)
+        return now > sessionEnd
+      }
+      return false
+    })
+  }, [sessions])
 
   // Calculate unread message count
   const unreadMessageCount = useMemo(() => {
@@ -999,11 +1019,43 @@ function QuickActionCard({ icon: Icon, title, description, color, onClick, disab
 }
 
 function NextSessionCard({ session, onCheckIn, onJoinSession }) {
+  // Calculate session timing
+  const now = new Date()
+  const sessionStart = new Date(session.scheduledDate)
+  const sessionDuration = session.duration || 50 // default 50 minutes
+  const sessionEnd = new Date(sessionStart.getTime() + sessionDuration * 60 * 1000)
+
+  // Join window: 15 minutes before to 15 minutes after session end
+  const joinWindowStart = new Date(sessionStart.getTime() - 15 * 60 * 1000)
+  const joinWindowEnd = new Date(sessionEnd.getTime() + 15 * 60 * 1000)
+
+  const canJoin = now >= joinWindowStart && now <= joinWindowEnd
+  const hasEnded = now > joinWindowEnd
+  const notStartedYet = now < joinWindowStart
+
+  // Calculate time until session
+  const timeDiff = sessionStart.getTime() - now.getTime()
+  const minutesUntil = Math.floor(timeDiff / (1000 * 60))
+  const hoursUntil = Math.floor(minutesUntil / 60)
+
+  const getTimeStatus = () => {
+    if (hasEnded) return { text: 'Session ended', color: 'text-violet-200' }
+    if (canJoin) return { text: 'Join now', color: 'text-green-300' }
+    if (minutesUntil < 60) return { text: `Starts in ${minutesUntil} min`, color: 'text-yellow-300' }
+    if (hoursUntil < 24) return { text: `Starts in ${hoursUntil}h ${minutesUntil % 60}m`, color: 'text-violet-200' }
+    return { text: 'Upcoming', color: 'text-violet-200' }
+  }
+
+  const timeStatus = getTimeStatus()
+
   return (
     <div className="bg-gradient-to-r from-violet-600 to-purple-600 rounded-xl sm:rounded-2xl p-4 sm:p-6 text-white shadow-xl">
       <div className="flex items-center justify-between mb-3 sm:mb-4">
         <h3 className="font-display font-semibold text-base sm:text-lg">Next Session</h3>
-        <Calendar className="w-5 h-5 sm:w-6 sm:h-6" />
+        <div className="flex items-center gap-2">
+          <span className={`text-xs font-medium ${timeStatus.color}`}>{timeStatus.text}</span>
+          <Calendar className="w-5 h-5 sm:w-6 sm:h-6" />
+        </div>
       </div>
       <div className="space-y-2 sm:space-y-3">
         <div>
@@ -1023,7 +1075,7 @@ function NextSessionCard({ session, onCheckIn, onJoinSession }) {
           </p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 pt-2 sm:pt-3">
-          {!session.checkInCompleted && (
+          {!session.checkInCompleted && !hasEnded && (
             <button
               onClick={onCheckIn}
               className="flex-1 px-4 py-3 bg-white text-violet-600 rounded-xl font-semibold hover:bg-violet-50 active:scale-[0.98] transition-all touch-manipulation text-sm sm:text-base"
@@ -1031,14 +1083,25 @@ function NextSessionCard({ session, onCheckIn, onJoinSession }) {
               Complete Check-in
             </button>
           )}
-          {(session.videoRoomUrl || session.videoRoomId || session._id) && (
-            <button 
+          {canJoin && (session.videoRoomUrl || session.videoRoomId || session._id) && (
+            <button
               onClick={() => onJoinSession && onJoinSession(session)}
               className="flex-1 px-4 py-3 bg-white/20 backdrop-blur-sm text-white rounded-xl font-semibold hover:bg-white/30 active:scale-[0.98] transition-all inline-flex items-center justify-center gap-2 touch-manipulation text-sm sm:text-base"
             >
               <Video className="w-4 h-4" />
               Join Session
             </button>
+          )}
+          {notStartedYet && !canJoin && (
+            <div className="flex-1 px-4 py-3 bg-white/10 text-white/70 rounded-xl font-medium text-center text-sm sm:text-base">
+              <Clock className="w-4 h-4 inline mr-2" />
+              Available {minutesUntil < 60 ? `in ${minutesUntil} min` : `in ${hoursUntil}h`}
+            </div>
+          )}
+          {hasEnded && (
+            <div className="flex-1 px-4 py-3 bg-white/10 text-white/70 rounded-xl font-medium text-center text-sm sm:text-base">
+              Session has ended
+            </div>
           )}
         </div>
       </div>
