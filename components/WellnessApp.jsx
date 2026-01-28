@@ -25,6 +25,7 @@ import {
   MicOff,
   VideoOff,
   Shield,
+  Clock,
 } from 'lucide-react';
 import AgoraVideoCall from './AgoraVideoCall';
 import SessionNotesModal from './SessionNotesModal';
@@ -1056,16 +1057,43 @@ function Metric({ title, value, sub, accent }) {
 }
 
 function ScheduleView({ todaysSchedule, onJoin, onOpenPatient, onOpenNotes }) {
+  // Helper to check if session can be joined (15 min before to 15 min after session end)
+  const getSessionJoinStatus = (session) => {
+    if (!session?.scheduledDate) return { canJoin: true, status: 'available' }; // Demo data
+
+    const now = new Date();
+    const sessionStart = new Date(session.scheduledDate);
+    const sessionDuration = session.duration || 50;
+    const sessionEnd = new Date(sessionStart.getTime() + sessionDuration * 60 * 1000);
+
+    const joinWindowStart = new Date(sessionStart.getTime() - 15 * 60 * 1000);
+    const joinWindowEnd = new Date(sessionEnd.getTime() + 15 * 60 * 1000);
+
+    const canJoin = now >= joinWindowStart && now <= joinWindowEnd;
+    const hasEnded = now > joinWindowEnd;
+    const notStartedYet = now < joinWindowStart;
+
+    const timeDiff = sessionStart.getTime() - now.getTime();
+    const minutesUntil = Math.floor(timeDiff / (1000 * 60));
+    const hoursUntil = Math.floor(minutesUntil / 60);
+
+    if (hasEnded) return { canJoin: false, status: 'ended', text: 'Ended' };
+    if (canJoin) return { canJoin: true, status: 'available', text: 'Join Now' };
+    if (minutesUntil < 60) return { canJoin: false, status: 'soon', text: `In ${minutesUntil}m` };
+    return { canJoin: false, status: 'waiting', text: `In ${hoursUntil}h ${minutesUntil % 60}m` };
+  };
+
   // Helper to format session data (handles both demo data and real API data)
   const formatSession = (item) => {
     // If it's a real session from API
     if (item.scheduledDate && item.patientId) {
       const date = new Date(item.scheduledDate);
       const patient = item.patientId;
+      const joinStatus = getSessionJoinStatus(item);
       return {
         id: item._id || item.sessionId,
         name: patient.firstName && patient.lastName ? `${patient.firstName} ${patient.lastName}` : 'Patient',
-        initials: patient.firstName && patient.lastName 
+        initials: patient.firstName && patient.lastName
           ? `${patient.firstName[0]}${patient.lastName[0]}`.toUpperCase()
           : 'P',
         time: date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
@@ -1073,6 +1101,7 @@ function ScheduleView({ todaysSchedule, onJoin, onOpenPatient, onOpenNotes }) {
         condition: patient.primaryConditions?.[0] || 'General',
         mode: item.mode || 'video',
         status: item.status,
+        joinStatus,
         session: item // Keep full session object
       };
     }
@@ -1086,6 +1115,7 @@ function ScheduleView({ todaysSchedule, onJoin, onOpenPatient, onOpenNotes }) {
       condition: item.condition || 'General',
       mode: 'video',
       status: 'scheduled',
+      joinStatus: { canJoin: true, status: 'available', text: 'Join' },
       session: item
     };
   };
@@ -1131,13 +1161,24 @@ function ScheduleView({ todaysSchedule, onJoin, onOpenPatient, onOpenNotes }) {
                     <FileText className="w-4 h-4" />
                     Notes
                   </button>
-                  <button
-                    onClick={() => onJoin(session.session)}
-                    className="btn-primary text-white px-6 py-2 rounded-lg font-semibold text-sm inline-flex items-center justify-center gap-2"
-                  >
-                    <Video className="w-4 h-4" />
-                    Join
-                  </button>
+                  {session.joinStatus?.canJoin ? (
+                    <button
+                      onClick={() => onJoin(session.session)}
+                      className="btn-primary text-white px-6 py-2 rounded-lg font-semibold text-sm inline-flex items-center justify-center gap-2"
+                    >
+                      <Video className="w-4 h-4" />
+                      Join
+                    </button>
+                  ) : session.joinStatus?.status === 'ended' ? (
+                    <span className="px-4 py-2 rounded-lg text-sm text-slate-500 bg-slate-100">
+                      Session Ended
+                    </span>
+                  ) : (
+                    <span className="px-4 py-2 rounded-lg text-sm text-amber-700 bg-amber-50">
+                      <Clock className="w-4 h-4 inline mr-1" />
+                      {session.joinStatus?.text || 'Not started'}
+                    </span>
+                  )}
                 </div>
               </div>
             ))}
