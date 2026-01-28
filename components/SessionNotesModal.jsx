@@ -42,21 +42,33 @@ export default function SessionNotesModal({ session, onClose, onSaved }) {
   const loadNotes = async () => {
     try {
       setLoading(true)
+      setError(null)
+      
+      // Check if token exists
       const token = localStorage.getItem('authToken')
-      const response = await fetch(`/api/doctor/sessions/${session._id}/notes`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
-
-      const data = await response.json()
+      if (!token) {
+        setError('Please log in to view session notes.')
+        setLoading(false)
+        return
+      }
+      
+      const { doctorAPI } = await import('@/lib/api.js')
+      const data = await doctorAPI.getSessionNotes(session._id)
 
       if (data.success) {
         setNotes(data.notes)
         setPatientInfo(data.patient)
+      } else {
+        const errorMsg = data.message || 'Failed to load notes'
+        setError(errorMsg)
+        // If unauthorized, suggest refresh
+        if (errorMsg.includes('token') || errorMsg.includes('authorized') || errorMsg.includes('expired')) {
+          console.error('Authentication error:', errorMsg)
+        }
       }
     } catch (err) {
       console.error('Failed to load notes:', err)
+      setError('Failed to load notes. Please check your connection and try again.')
     } finally {
       setLoading(false)
     }
@@ -67,27 +79,34 @@ export default function SessionNotesModal({ session, onClose, onSaved }) {
       setSaving(true)
       setError(null)
 
+      // Check if token exists
       const token = localStorage.getItem('authToken')
-      const response = await fetch(`/api/doctor/sessions/${session._id}/notes`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(notes)
-      })
+      if (!token) {
+        setError('Please log in to save session notes.')
+        setSaving(false)
+        return
+      }
 
-      const data = await response.json()
+      const { doctorAPI } = await import('@/lib/api.js')
+      const data = await doctorAPI.updateSessionNotes(session._id, notes)
 
       if (data.success) {
         setSaved(true)
         setTimeout(() => setSaved(false), 2000)
         onSaved?.()
       } else {
-        setError(data.message || 'Failed to save notes')
+        const errorMsg = data.message || 'Failed to save notes'
+        // If unauthorized, suggest refresh
+        if (errorMsg.includes('token') || errorMsg.includes('authorized') || errorMsg.includes('expired')) {
+          setError('Session expired. Please refresh the page and log in again.')
+          console.error('Authentication error:', errorMsg)
+        } else {
+          setError(errorMsg)
+        }
       }
     } catch (err) {
-      setError('Failed to save notes. Please try again.')
+      console.error('Save notes error:', err)
+      setError('Failed to save notes. Please check your connection and try again.')
     } finally {
       setSaving(false)
     }
