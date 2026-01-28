@@ -134,8 +134,8 @@ export default function WellnessApp({ user: authUser, onLogout }) {
         setPatients(transformedPatients);
       }
 
-      // Load upcoming schedule (all future sessions, not just today)
-      const scheduleData = await doctorAPI.getSchedule(null, true);
+      // Load all sessions (including completed) for schedule and patient detail views
+      const scheduleData = await doctorAPI.getSchedule(null, false);
       if (scheduleData.success) {
         setSessions(scheduleData.sessions || []);
       }
@@ -514,9 +514,11 @@ export default function WellnessApp({ user: authUser, onLogout }) {
             {currentView === 'patient-detail' && selectedPatient && (
               <PatientDetailView
                 patient={selectedPatient}
+                sessions={sessions}
                 onBack={() => setCurrentView('patients')}
                 onJoinVideo={() => joinVideo({ session: selectedPatient.session || selectedPatient, patient: selectedPatient })}
                 onOpenNotesModal={() => openNotesModal({ patient: selectedPatient })}
+                onOpenNotes={(session) => setNotesSession(session)}
               />
             )}
             {currentView === 'schedule' && (
@@ -947,7 +949,80 @@ function PatientsView({ patients, onOpenPatient }) {
   );
 }
 
-function PatientDetailView({ patient, onBack, onJoinVideo, onOpenNotesModal }) {
+function PatientDetailView({ patient, sessions, onBack, onJoinVideo, onOpenNotesModal, onOpenNotes }) {
+  // Filter sessions for this patient and get completed sessions with notes
+  const patientSessions = useMemo(() => {
+    if (!sessions || !patient) return [];
+    
+    // Get patient ID - could be _id, id, or patientId field
+    const patientId = patient._id || patient.id;
+    if (!patientId) return [];
+    
+    return sessions
+      .filter((s) => {
+        if (!s.patientId) return false;
+        
+        // Handle different patientId structures:
+        // 1. Populated object: { _id: ..., firstName: ..., lastName: ... }
+        // 2. ObjectId directly
+        // 3. String ID
+        let sessionPatientId = null;
+        if (typeof s.patientId === 'object' && s.patientId !== null) {
+          sessionPatientId = s.patientId._id || s.patientId;
+        } else {
+          sessionPatientId = s.patientId;
+        }
+        
+        // Convert both to strings for comparison
+        return String(sessionPatientId) === String(patientId);
+      })
+      .filter((s) => {
+        // Only show sessions with notes
+        return s.sessionNotes || s.presentingConcerns || s.keyObservations || s.treatmentPlan || s.homework;
+      })
+      .sort((a, b) => {
+        // Sort by date, most recent first
+        const dateA = new Date(a.scheduledDate || a.createdAt || 0);
+        const dateB = new Date(b.scheduledDate || b.createdAt || 0);
+        return dateB - dateA;
+      })
+      .slice(0, 10); // Limit to 10 most recent
+  }, [sessions, patient]);
+
+  // Format date helper
+  const formatDate = (dateString) => {
+    if (!dateString) return 'Date unknown';
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffTime = Math.abs(now - date);
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)} week${Math.floor(diffDays / 7) > 1 ? 's' : ''} ago`;
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
+  };
+
+  // Format session type
+  const formatSessionType = (session) => {
+    const type = session.type || 'Session';
+    const mode = session.mode || '';
+    if (mode === 'video') return 'Video Session';
+    if (mode === 'in-person') return 'In-Person Session';
+    return type.charAt(0).toUpperCase() + type.slice(1);
+  };
+
+  // Get session notes summary
+  const getNotesSummary = (session) => {
+    if (session.sessionNotes) return session.sessionNotes;
+    if (session.keyObservations) return session.keyObservations;
+    if (session.presentingConcerns) return `Presenting concerns: ${session.presentingConcerns}`;
+    if (session.treatmentPlan) return `Treatment plan: ${session.treatmentPlan}`;
+    if (session.homework) return `Homework: ${session.homework}`;
+    return 'No notes available';
+  };
+
   return (
     <div className="fade-in space-y-6">
       <button onClick={onBack} className="text-slate-600 hover:text-slate-900 font-medium flex items-center gap-2 text-sm">
@@ -984,7 +1059,7 @@ function PatientDetailView({ patient, onBack, onJoinVideo, onOpenNotesModal }) {
             <div className="grid sm:grid-cols-3 gap-4 mt-4">
               <Meta label="Primary Condition" value={patient.condition} />
               <Meta label="Next Session" value={patient.nextSession} />
-              <Meta label="Total Sessions" value={`${patient.sessions} completed`} />
+              <Meta label="Total Sessions" value={`${patientSessions.length} with notes`} />
             </div>
           </div>
         </div>
@@ -994,38 +1069,61 @@ function PatientDetailView({ patient, onBack, onJoinVideo, onOpenNotesModal }) {
 
       <div className="bg-white rounded-xl p-6 border border-slate-200">
         <h3 className="font-display font-semibold text-lg text-slate-900 mb-4">Recent Session Notes</h3>
-        <div className="space-y-4">
-          {[
-            {
-              date: '3 days ago',
-              type: 'Video Session',
-              duration: '50 min',
-              notes: 'Good progress on coping strategies. Patient reports improved sleep quality.',
-            },
-            {
-              date: '1 week ago',
-              type: 'Video Session',
-              duration: '52 min',
-              notes: 'Discussed workplace stressors. Introduced new relaxation techniques.',
-            },
-            { date: '2 weeks ago', type: 'In-Person', duration: '60 min', notes: 'Initial assessment. Established treatment goals and plan.' },
-          ].map((session, idx) => (
-            <div key={idx} className="p-4 border border-slate-200 rounded-lg">
-              <div className="flex items-start justify-between mb-2">
-                <div>
-                  <div className="font-semibold text-slate-900">{session.type}</div>
-                  <div className="text-sm text-slate-600">
-                    {session.date} • {session.duration}
+        {patientSessions.length === 0 ? (
+          <div className="text-center py-8 text-slate-500">
+            <p>No session notes available yet.</p>
+            <p className="text-sm mt-2">Notes will appear here after sessions are completed.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {patientSessions.map((session) => (
+              <div key={session._id || session.sessionId || session.id} className="p-4 border border-slate-200 rounded-lg hover:border-violet-300 transition-colors">
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex-1">
+                    <div className="font-semibold text-slate-900">{formatSessionType(session)}</div>
+                    <div className="text-sm text-slate-600">
+                      {formatDate(session.scheduledDate || session.createdAt)} • {session.duration || 50} min
+                    </div>
                   </div>
+                  <button 
+                    onClick={() => onOpenNotes(session)}
+                    aria-label="View full session notes" 
+                    className="text-violet-600 hover:text-violet-700 p-1 hover:bg-violet-50 rounded transition-colors"
+                  >
+                    <Eye className="w-5 h-5" />
+                  </button>
                 </div>
-                <button aria-label="View session" className="text-violet-600 hover:text-violet-700">
-                  <Eye className="w-5 h-5" />
-                </button>
+                <div className="space-y-2 mt-3">
+                  {session.sessionNotes && (
+                    <p className="text-sm text-slate-700">
+                      <span className="font-medium">Notes:</span> {session.sessionNotes}
+                    </p>
+                  )}
+                  {session.presentingConcerns && (
+                    <p className="text-sm text-slate-600">
+                      <span className="font-medium">Concerns:</span> {session.presentingConcerns}
+                    </p>
+                  )}
+                  {session.keyObservations && (
+                    <p className="text-sm text-slate-600">
+                      <span className="font-medium">Observations:</span> {session.keyObservations}
+                    </p>
+                  )}
+                  {session.homework && (
+                    <p className="text-sm text-slate-600">
+                      <span className="font-medium">Homework:</span> {session.homework}
+                    </p>
+                  )}
+                  {session.treatmentPlan && (
+                    <p className="text-sm text-slate-600">
+                      <span className="font-medium">Treatment Plan:</span> {session.treatmentPlan}
+                    </p>
+                  )}
+                </div>
               </div>
-              <p className="text-sm text-slate-700">{session.notes}</p>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3">
