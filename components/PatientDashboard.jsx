@@ -1450,13 +1450,13 @@ function EmergencyResourcesCard() {
       <p className="text-xs sm:text-sm text-red-800 mb-3 sm:mb-4">If you're in crisis, help is available 24/7</p>
       <div className="space-y-2">
         <a 
-          href="tel:988"
+          href="tel:1122"
           className="w-full px-4 py-3 bg-red-600 text-white rounded-xl font-semibold hover:bg-red-700 active:scale-[0.98] transition-all inline-flex items-center justify-center gap-2 touch-manipulation text-sm sm:text-base"
         >
           <Phone className="w-4 h-4" />
-          Call Crisis Hotline
+          Call Emergency Services
         </a>
-        <p className="text-center text-xs text-red-700">988 - Suicide & Crisis Lifeline</p>
+        <p className="text-center text-xs text-red-700">1122 - Pakistan Emergency Services</p>
       </div>
     </div>
   )
